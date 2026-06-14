@@ -362,6 +362,12 @@ export default function App() {
   const [newReward,     setNewReward]     = useState("");
   const [newRewardCost, setNewRewardCost] = useState(20);
   const [historyDate,   setHistoryDate]   = useState(null);
+  const [editingTaskId,   setEditingTaskId]   = useState(null);
+  const [editTaskText,    setEditTaskText]    = useState("");
+  const [editTaskPoints,  setEditTaskPoints]  = useState(10);
+  const [editingRewardId, setEditingRewardId] = useState(null);
+  const [editRewardText,  setEditRewardText]  = useState("");
+  const [editRewardCost,  setEditRewardCost]  = useState(20);
   const unsubRef = useRef(null);
 
   // Boot
@@ -475,6 +481,66 @@ export default function App() {
     setNewReward(""); showToast("獎勵已加入！");
   };
 
+  // ── Edit / Delete: Tasks ────────────────────────────────────────
+  const startEditTask = (task) => {
+    setEditingTaskId(task.id);
+    setEditTaskText(task.text);
+    setEditTaskPoints(task.points);
+  };
+
+  const cancelEditTask = () => setEditingTaskId(null);
+
+  const saveEditTask = async () => {
+    if (!editTaskText.trim()) return;
+    await saveRoom(session.roomCode, {
+      ...roomData,
+      tasks: roomData.tasks.map(t =>
+        t.id === editingTaskId ? { ...t, text: editTaskText.trim(), points: editTaskPoints } : t
+      ),
+    });
+    setEditingTaskId(null);
+    showToast("任務已更新！");
+  };
+
+  const deleteTask = async (id) => {
+    if (!window.confirm("確定要刪除這個任務嗎？")) return;
+    await saveRoom(session.roomCode, {
+      ...roomData,
+      tasks: roomData.tasks.filter(t => t.id !== id),
+    });
+    showToast("任務已刪除");
+  };
+
+  // ── Edit / Delete: Rewards ───────────────────────────────────────
+  const startEditReward = (reward) => {
+    setEditingRewardId(reward.id);
+    setEditRewardText(reward.text);
+    setEditRewardCost(reward.cost);
+  };
+
+  const cancelEditReward = () => setEditingRewardId(null);
+
+  const saveEditReward = async () => {
+    if (!editRewardText.trim()) return;
+    await saveRoom(session.roomCode, {
+      ...roomData,
+      rewards: roomData.rewards.map(r =>
+        r.id === editingRewardId ? { ...r, text: editRewardText.trim(), cost: editRewardCost } : r
+      ),
+    });
+    setEditingRewardId(null);
+    showToast("獎勵已更新！");
+  };
+
+  const deleteReward = async (id) => {
+    if (!window.confirm("確定要刪除這個獎勵嗎？")) return;
+    await saveRoom(session.roomCode, {
+      ...roomData,
+      rewards: roomData.rewards.filter(r => r.id !== id),
+    });
+    showToast("獎勵已刪除");
+  };
+
   const resetSession = () => { LS.del("session"); setSession(null); setUnlocked(false); setRoomData(null); };
 
   // ── Screens ───────────────────────────────────────────────────
@@ -580,33 +646,66 @@ export default function App() {
           )}
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {roomData.tasks.map(task => (
-              <div key={task.id} onClick={() => toggleTask(task.id)} style={{
-                display:"flex", alignItems:"center", gap:12,
-                background: task.done ? "#1E2A1E" : "#222340",
-                border:`1px solid ${task.done ? "#2E4A2E" : "#2D2E4A"}`,
-                borderRadius:14, padding:"14px 16px",
-                cursor: isDoer ? "pointer" : "default",
-                transition:"all .2s", opacity: task.done ? 0.72 : 1,
-              }}>
-                <div style={{
-                  width:22, height:22, borderRadius:6, flexShrink:0,
-                  border:`2px solid ${task.done ? "#4CAF50" : "#444566"}`,
-                  background: task.done ? "#4CAF50" : "transparent",
-                  display:"flex", alignItems:"center", justifyContent:"center",
+              editingTaskId === task.id ? (
+                <div key={task.id} style={{
+                  background:"#222340", border:"1px solid #F4C84260",
+                  borderRadius:14, padding:14,
                 }}>
-                  {task.done && <span style={{ color:"white", fontSize:13 }}>✓</span>}
+                  <input value={editTaskText} onChange={e => setEditTaskText(e.target.value)}
+                    onKeyDown={e => e.key==="Enter" && saveEditTask()}
+                    style={inputStyle} />
+                  <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                    <select value={editTaskPoints} onChange={e => setEditTaskPoints(Number(e.target.value))}
+                      style={{ background:"#1A1B2E", border:"1px solid #2D2E4A", color:"#F4C842", borderRadius:8, padding:"6px 10px", fontSize:12 }}>
+                      {[5,10,15,20,30,50].map(v => <option key={v} value={v}>{v} 積分</option>)}
+                    </select>
+                    <button onClick={saveEditTask} style={{
+                      flex:1, background:"#F4C842", color:"#1A1B2E",
+                      border:"none", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer",
+                    }}>儲存</button>
+                    <button onClick={cancelEditTask} style={{
+                      background:"#2D2E4A", color:"#8889B0",
+                      border:"none", borderRadius:8, padding:"0 14px", fontSize:13, cursor:"pointer",
+                    }}>取消</button>
+                  </div>
                 </div>
-                <span style={{
-                  flex:1, fontSize:14, fontWeight:500,
-                  textDecoration: task.done ? "line-through" : "none",
-                  color: task.done ? "#8889B0" : "#E8E9F3",
-                }}>{task.text}</span>
-                <span style={{
-                  fontSize:12, fontWeight:700, padding:"3px 8px", borderRadius:8,
-                  color:      task.done ? "#4CAF50" : "#F4C842",
-                  background: task.done ? "#4CAF5018" : "#F4C84215",
-                }}>+{task.points}</span>
-              </div>
+              ) : (
+                <div key={task.id} onClick={() => toggleTask(task.id)} style={{
+                  display:"flex", alignItems:"center", gap:12,
+                  background: task.done ? "#1E2A1E" : "#222340",
+                  border:`1px solid ${task.done ? "#2E4A2E" : "#2D2E4A"}`,
+                  borderRadius:14, padding:"14px 16px",
+                  cursor: isDoer ? "pointer" : "default",
+                  transition:"all .2s", opacity: task.done ? 0.72 : 1,
+                }}>
+                  <div style={{
+                    width:22, height:22, borderRadius:6, flexShrink:0,
+                    border:`2px solid ${task.done ? "#4CAF50" : "#444566"}`,
+                    background: task.done ? "#4CAF50" : "transparent",
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                  }}>
+                    {task.done && <span style={{ color:"white", fontSize:13 }}>✓</span>}
+                  </div>
+                  <span style={{
+                    flex:1, fontSize:14, fontWeight:500,
+                    textDecoration: task.done ? "line-through" : "none",
+                    color: task.done ? "#8889B0" : "#E8E9F3",
+                  }}>{task.text}</span>
+                  <span style={{
+                    fontSize:12, fontWeight:700, padding:"3px 8px", borderRadius:8,
+                    color:      task.done ? "#4CAF50" : "#F4C842",
+                    background: task.done ? "#4CAF5018" : "#F4C84215",
+                  }}>+{task.points}</span>
+                  <button onClick={(e) => { e.stopPropagation(); startEditTask(task); }} style={{
+                    background:"none", border:"none", color:"#8889B0",
+                    fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
+                  }}>✏️</button>
+                  <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} style={{
+                    background:"none", border:"none", color:"#8889B0",
+                    fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
+                  }}>🗑️</button>
+                </div>
+              )
             ))}
           </div>
           <div style={{ marginTop:20, background:"#222340", border:"1px dashed #444566", borderRadius:14, padding:14 }}>
@@ -638,6 +737,32 @@ export default function App() {
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {roomData.rewards.map(reward => {
               const canAfford = roomData.points >= reward.cost;
+              if (editingRewardId === reward.id) {
+                return (
+                  <div key={reward.id} style={{
+                    background:"#222340", border:"1px solid #FF8B7260",
+                    borderRadius:14, padding:14,
+                  }}>
+                    <input value={editRewardText} onChange={e => setEditRewardText(e.target.value)}
+                      onKeyDown={e => e.key==="Enter" && saveEditReward()}
+                      style={inputStyle} />
+                    <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                      <select value={editRewardCost} onChange={e => setEditRewardCost(Number(e.target.value))}
+                        style={{ background:"#1A1B2E", border:"1px solid #2D2E4A", color:"#FF8B72", borderRadius:8, padding:"6px 10px", fontSize:12 }}>
+                        {[10,15,20,30,40,50,60,80,100].map(v => <option key={v} value={v}>{v} 積分</option>)}
+                      </select>
+                      <button onClick={saveEditReward} style={{
+                        flex:1, background:"#FF8B72", color:"white",
+                        border:"none", borderRadius:8, fontSize:13, fontWeight:700, cursor:"pointer",
+                      }}>儲存</button>
+                      <button onClick={cancelEditReward} style={{
+                        background:"#2D2E4A", color:"#8889B0",
+                        border:"none", borderRadius:8, padding:"0 14px", fontSize:13, cursor:"pointer",
+                      }}>取消</button>
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div key={reward.id} style={{
                   background: reward.claimed ? "#1E1E2E" : "#222340",
@@ -668,6 +793,18 @@ export default function App() {
                     </button>
                   )}
                   {reward.claimed && <div style={{ fontSize:20 }}>✅</div>}
+                  {!isDoer && (
+                    <>
+                      <button onClick={() => startEditReward(reward)} style={{
+                        background:"none", border:"none", color:"#8889B0",
+                        fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
+                      }}>✏️</button>
+                      <button onClick={() => deleteReward(reward.id)} style={{
+                        background:"none", border:"none", color:"#8889B0",
+                        fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
+                      }}>🗑️</button>
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -830,4 +967,4 @@ export default function App() {
       </div>
     </div>
   );
-                         }
+             }
