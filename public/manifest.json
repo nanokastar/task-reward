@@ -1,0 +1,10 @@
+{
+  "name": "任務積分系統",
+  "short_name": "任務積分",
+  "description": "雙人協作任務與獎勵積分系統",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1A1B2E",
+  "theme_color": "#1A1B2E",
+  "orientation": "portrait"
+}
