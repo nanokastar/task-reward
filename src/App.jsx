@@ -45,7 +45,15 @@ const C = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────
-const todayKey = () => new Date().toISOString().slice(0, 10);
+// 台灣時間凌晨 03:00 為換日點
+const todayKey = () => {
+  const now = new Date();
+  const shifted = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  return shifted.toLocaleDateString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).replace(/\//g, "-");
+};
 const fmtDate  = (d) =>
   new Date(d).toLocaleDateString("zh-TW", {
     year: "numeric", month: "long", day: "numeric", weekday: "long",
@@ -64,14 +72,13 @@ const LS = {
   set: (k, v) => localStorage.setItem("tr2_" + k, JSON.stringify(v)),
   del: (k) => localStorage.removeItem("tr2_" + k),
 };
-const getRooms     = () => LS.get("rooms") || [];
-const setRooms     = (r) => LS.set("rooms", r);
+const getRooms      = () => LS.get("rooms") || [];
+const setRooms      = (r) => LS.set("rooms", r);
 const getActiveCode = () => LS.get("activeRoomCode");
 const setActiveCode = (c) => LS.set("activeRoomCode", c);
-const getNotepad   = () => LS.get("notepad") || "";
-const setNotepadLS = (t) => LS.set("notepad", t);
+const getNotepad    = () => LS.get("notepad") || "";
+const setNotepadLS  = (t) => LS.set("notepad", t);
 
-// 從 v1 版本（單一房間）的本地資料轉換成 v2（多房間清單）
 function migrateLegacySession() {
   if (getRooms().length > 0) return;
   try {
@@ -181,41 +188,35 @@ const inputStyle = {
   borderRadius:10, padding:"10px 14px", color:C.text,
   fontSize:14, outline:"none", boxSizing:"border-box",
 };
-
 const cardStyle = {
   background:C.card, border:`1px solid ${C.border}`,
   borderRadius:14, padding:"14px 16px", boxShadow:"0 2px 10px rgba(150,140,210,0.08)",
 };
-
 const pillBtn = (active, accent = C.accent) => ({
   padding:"6px 14px", borderRadius:20, border:`1px solid ${active ? accent : C.border}`,
   background: active ? accent : "#FFFFFF",
   color: active ? "#FFFFFF" : C.textMuted,
-  fontSize:12, fontWeight:600, cursor:"pointer", whiteSpace:"nowrap",
-  flexShrink:0,
+  fontSize:12, fontWeight:600, cursor:"pointer", whiteSpace:"nowrap", flexShrink:0,
 });
-
 const primaryBtn = {
   background:`linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
-  color:"#FFFFFF", border:"none", borderRadius:10,
-  fontSize:13, fontWeight:700, cursor:"pointer",
+  color:"#FFFFFF", border:"none", borderRadius:10, fontSize:13, fontWeight:700, cursor:"pointer",
 };
-
 const secondaryBtn = {
   background:"#FFFFFF", color:C.textMuted, border:`1px solid ${C.border}`,
   borderRadius:10, fontSize:13, cursor:"pointer",
 };
 
-// ─── Setup Screen（首次使用：建立第一個房間）─────────────────────
+// ─── Setup Screen ─────────────────────────────────────────────────
 function SetupScreen({ onDone }) {
-  const [step, setStep]           = useState("choose");
-  const [role, setRole]           = useState(null);
-  const [code, setCode]           = useState("");
-  const [pin, setPin]             = useState("");
+  const [step, setStep]             = useState("choose");
+  const [role, setRole]             = useState(null);
+  const [code, setCode]             = useState("");
+  const [pin, setPin]               = useState("");
   const [pinConfirm, setPinConfirm] = useState("");
-  const [err, setErr]             = useState("");
-  const [loading, setLoading]     = useState(false);
-  const [roomCode]                = useState(genCode);
+  const [err, setErr]               = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [roomCode]                  = useState(genCode);
 
   const finish = (roomCode, role, pin) => {
     setRooms([{ roomCode, role, pin }]);
@@ -233,17 +234,16 @@ function SetupScreen({ onDone }) {
       await createRoom(roomCode, role);
       finish(roomCode, role, pin);
     } catch (e) {
-      if (e.code === "auth/operation-not-allowed") {
-        setErr("請先在 Firebase Console 開啟「匿名登入」功能（Authentication → Sign-in method → 匿名）");
-      } else {
-        setErr("建立失敗：" + e.message);
-      }
+      setErr(e.code === "auth/operation-not-allowed"
+        ? "請先在 Firebase Console 開啟「匿名登入」功能"
+        : "建立失敗：" + e.message);
     }
     setLoading(false);
   };
 
   const handleJoin = async () => {
     if (!code.trim())       return setErr("請輸入房間代碼");
+    if (!role)              return setErr("請選擇你的角色");
     if (pin.length < 4)     return setErr("請設定至少 4 位數的 PIN 碼");
     if (pin !== pinConfirm) return setErr("兩次 PIN 碼不一致");
     setLoading(true);
@@ -252,16 +252,12 @@ function SetupScreen({ onDone }) {
       await signInAnonymously(auth);
       const rd = await fetchRoom(upperCode);
       if (!rd) { setLoading(false); return setErr("找不到此房間，請確認代碼"); }
-      const takenRole  = Object.keys(rd.roles || {})[0];
-      const joinedRole = takenRole === "doer" ? "giver" : "doer";
-      await updateDoc(roomRef(upperCode), { [`roles.${joinedRole}`]: true });
-      finish(upperCode, joinedRole, pin);
+      await updateDoc(roomRef(upperCode), { [`roles.${role}`]: true });
+      finish(upperCode, role, pin);
     } catch (e) {
-      if (e.code === "auth/operation-not-allowed") {
-        setErr("請先在 Firebase Console 開啟「匿名登入」功能（Authentication → Sign-in method → 匿名）");
-      } else {
-        setErr("加入失敗：" + e.message);
-      }
+      setErr(e.code === "auth/operation-not-allowed"
+        ? "請先在 Firebase Console 開啟「匿名登入」功能"
+        : "加入失敗：" + e.message);
     }
     setLoading(false);
   };
@@ -270,8 +266,7 @@ function SetupScreen({ onDone }) {
     <button onClick={onClick} disabled={loading} style={{
       width:"100%", padding:"14px 0", borderRadius:12, border:"none",
       background: accent || `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
-      color:"#FFFFFF",
-      fontSize:15, fontWeight:700, cursor:"pointer", marginTop:10,
+      color:"#FFFFFF", fontSize:15, fontWeight:700, cursor:"pointer", marginTop:10,
       opacity: loading ? 0.6 : 1,
     }}>{loading ? "處理中…" : label}</button>
   );
@@ -289,8 +284,9 @@ function SetupScreen({ onDone }) {
 
       {step === "choose" && (
         <div style={{ width:"100%", maxWidth:320 }}>
-          <Btn label="🏠 建立新房間"   onClick={() => setStep("create")} />
-          <Btn label="🔗 加入現有房間" onClick={() => setStep("join")} accent={`linear-gradient(135deg, ${C.pink}, ${C.pinkDark})`} />
+          <Btn label="🏠 建立新房間" onClick={() => setStep("create")} />
+          <Btn label="🔗 加入現有房間" onClick={() => setStep("join")}
+            accent={`linear-gradient(135deg, ${C.pink}, ${C.pinkDark})`} />
         </div>
       )}
 
@@ -301,16 +297,13 @@ function SetupScreen({ onDone }) {
             <div style={{ fontSize:28, fontWeight:800, color:C.accentDark, letterSpacing:6 }}>{roomCode}</div>
             <div style={{ fontSize:11, color:C.textMuted, marginTop:4 }}>把這組代碼傳給對方</div>
           </div>
-
           <div style={{ fontSize:13, color:C.textMuted, marginBottom:8 }}>我的角色</div>
           <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-            {[
-              ["doer",  "🙋", "任務執行者", "完成任務、累積積分"],
-              ["giver", "🎁", "獎勵發放者", "設計獎勵、核准兌換"],
-            ].map(([r, icon, name, desc]) => (
+            {[["doer","🙋","任務執行者","完成任務、累積積分"],
+              ["giver","🎁","獎勵發放者","設計獎勵、核准兌換"]].map(([r,icon,name,desc]) => (
               <div key={r} onClick={() => setRole(r)} style={{
-                flex:1, background: role === r ? C.cardDone : C.card,
-                border: `2px solid ${role === r ? C.accent : C.border}`,
+                flex:1, background: role===r ? C.cardDone : C.card,
+                border:`2px solid ${role===r ? C.accent : C.border}`,
                 borderRadius:12, padding:12, cursor:"pointer", textAlign:"center",
               }}>
                 <div style={{ fontSize:24 }}>{icon}</div>
@@ -319,20 +312,13 @@ function SetupScreen({ onDone }) {
               </div>
             ))}
           </div>
-
           <div style={{ fontSize:13, color:C.textMuted, marginBottom:6 }}>設定 PIN 碼（4 位以上）</div>
           <input type="password" value={pin} onChange={e => setPin(e.target.value)}
             placeholder="PIN 碼" style={inputStyle} />
           <input type="password" value={pinConfirm} onChange={e => setPinConfirm(e.target.value)}
             placeholder="再輸入一次" style={{ ...inputStyle, marginTop:8 }} />
-
-          {err && (
-            <div style={{
-              color:C.pinkDark, fontSize:12, marginTop:10,
-              background:"#FFF1F4", borderRadius:8, padding:"10px 12px",
-              lineHeight:1.6, border:`1px solid ${C.pink}40`,
-            }}>{err}</div>
-          )}
+          {err && <div style={{ color:C.pinkDark, fontSize:12, marginTop:10,
+            background:"#FFF1F4", borderRadius:8, padding:"10px 12px", lineHeight:1.6 }}>{err}</div>}
           <Btn label="建立房間" onClick={handleCreate} />
           <button onClick={() => { setStep("choose"); setErr(""); }} style={{
             width:"100%", background:"none", border:"none", color:C.textMuted,
@@ -347,21 +333,30 @@ function SetupScreen({ onDone }) {
           <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
             placeholder="例：AB12CD" maxLength={6}
             style={{ ...inputStyle, letterSpacing:6, fontWeight:700, fontSize:20, textAlign:"center" }} />
-
-          <div style={{ fontSize:13, color:C.textMuted, marginBottom:6, marginTop:16 }}>設定你的 PIN 碼</div>
+          <div style={{ fontSize:13, color:C.textMuted, marginBottom:8, marginTop:16 }}>選擇你的角色（之後無法更改）</div>
+          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+            {[["doer","🙋","任務執行者","完成任務、累積積分"],
+              ["giver","🎁","獎勵發放者","設計獎勵、核准兌換"]].map(([r,icon,name,desc]) => (
+              <div key={r} onClick={() => setRole(r)} style={{
+                flex:1, background: role===r ? C.cardDone : C.card,
+                border:`2px solid ${role===r ? C.accent : C.border}`,
+                borderRadius:12, padding:12, cursor:"pointer", textAlign:"center",
+              }}>
+                <div style={{ fontSize:24 }}>{icon}</div>
+                <div style={{ fontSize:12, fontWeight:700, marginTop:4 }}>{name}</div>
+                <div style={{ fontSize:10, color:C.textMuted, marginTop:2 }}>{desc}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize:13, color:C.textMuted, marginBottom:6 }}>設定你的 PIN 碼</div>
           <input type="password" value={pin} onChange={e => setPin(e.target.value)}
             placeholder="PIN 碼" style={inputStyle} />
           <input type="password" value={pinConfirm} onChange={e => setPinConfirm(e.target.value)}
             placeholder="再輸入一次" style={{ ...inputStyle, marginTop:8 }} />
-
-          {err && (
-            <div style={{
-              color:C.pinkDark, fontSize:12, marginTop:10,
-              background:"#FFF1F4", borderRadius:8, padding:"10px 12px",
-              lineHeight:1.6, border:`1px solid ${C.pink}40`,
-            }}>{err}</div>
-          )}
-          <Btn label="加入房間" onClick={handleJoin} accent={`linear-gradient(135deg, ${C.pink}, ${C.pinkDark})`} />
+          {err && <div style={{ color:C.pinkDark, fontSize:12, marginTop:10,
+            background:"#FFF1F4", borderRadius:8, padding:"10px 12px", lineHeight:1.6 }}>{err}</div>}
+          <Btn label="加入房間" onClick={handleJoin}
+            accent={`linear-gradient(135deg, ${C.pink}, ${C.pinkDark})`} />
           <button onClick={() => { setStep("choose"); setErr(""); }} style={{
             width:"100%", background:"none", border:"none", color:C.textMuted,
             fontSize:13, cursor:"pointer", marginTop:10, padding:8,
@@ -376,12 +371,10 @@ function SetupScreen({ onDone }) {
 function PinScreen({ session, onUnlock, onResetAll }) {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
-
   const tryUnlock = () => {
     if (pin === session?.pin) onUnlock();
     else { setErr("PIN 碼錯誤"); setPin(""); }
   };
-
   return (
     <div style={{
       minHeight:"100vh", background:`linear-gradient(160deg, ${C.bg}, ${C.bgEnd})`, color:C.text,
@@ -402,22 +395,18 @@ function PinScreen({ session, onUnlock, onResetAll }) {
         {err && <div style={{ color:C.pinkDark, fontSize:12, marginTop:8, textAlign:"center" }}>{err}</div>}
         <button onClick={tryUnlock} style={{
           width:"100%", marginTop:14, padding:"13px 0", borderRadius:12,
-          background:`linear-gradient(135deg, ${C.accent}, ${C.accentDark})`, color:"#FFFFFF", border:"none",
-          fontSize:15, fontWeight:700, cursor:"pointer",
+          background:`linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
+          color:"#FFFFFF", border:"none", fontSize:15, fontWeight:700, cursor:"pointer",
         }}>解鎖</button>
-
-        <div style={{
-          marginTop:32, padding:16, background:C.card,
-          borderRadius:12, border:`1px solid ${C.border}`,
-        }}>
+        <div style={{ marginTop:32, padding:16, background:C.card,
+          borderRadius:12, border:`1px solid ${C.border}` }}>
           <div style={{ fontSize:12, color:C.textMuted, marginBottom:4 }}>🔄 重新開始</div>
           <div style={{ fontSize:11, color:"#C2A8D6", marginBottom:10 }}>
             移除這台裝置上所有已儲存的房間，回到初始設定畫面。房間本身的資料不會消失。
           </div>
           <button onClick={onResetAll} style={{
-            width:"100%", background:"none",
-            border:`1px solid ${C.pink}`, color:C.pinkDark,
-            borderRadius:8, padding:"8px 0", fontSize:12, cursor:"pointer",
+            width:"100%", background:"none", border:`1px solid ${C.pink}`,
+            color:C.pinkDark, borderRadius:8, padding:"8px 0", fontSize:12, cursor:"pointer",
           }}>移除所有房間，重新設定</button>
         </div>
       </div>
@@ -427,52 +416,46 @@ function PinScreen({ session, onUnlock, onResetAll }) {
 
 // ─── Main App ─────────────────────────────────────────────────────
 export default function App() {
-  const [session,       setSession]       = useState(null); // {roomCode, role, pin}
+  const [session,       setSession]       = useState(null);
   const [unlocked,      setUnlocked]      = useState(false);
   const [roomData,      setRoomData]      = useState(null);
   const [page,          setPage]          = useState("tasks");
   const [toast,         setToast]         = useState(null);
   const [confetti,      setConfetti]      = useState(false);
-
-  // task form
   const [newTask,       setNewTask]       = useState("");
   const [newTaskPts,    setNewTaskPts]    = useState(10);
   const [newTaskCategory, setNewTaskCategory] = useState("");
-  // reward form
   const [newReward,     setNewReward]     = useState("");
   const [newRewardCost, setNewRewardCost] = useState(20);
-  // task edit
-  const [editingTaskId,   setEditingTaskId]   = useState(null);
-  const [editTaskText,    setEditTaskText]    = useState("");
-  const [editTaskPoints,  setEditTaskPoints]  = useState(10);
-  const [editTaskCategory,setEditTaskCategory]= useState("");
-  // reward edit
-  const [editingRewardId, setEditingRewardId] = useState(null);
-  const [editRewardText,  setEditRewardText]  = useState("");
-  const [editRewardCost,  setEditRewardCost]  = useState(20);
-  // categories
-  const [selectedCategory, setSelectedCategory] = useState(null); // null = 全部
-  const [managingCategories, setManagingCategories] = useState(false);
-  const [newCategoryName, setNewCategoryName] = useState("");
-  const [editCategoryDrafts, setEditCategoryDrafts] = useState({});
-  // switch tab
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [showJoinForm,   setShowJoinForm]   = useState(false);
-  const [createRole,     setCreateRole]     = useState(null);
-  const [createPin,      setCreatePin]      = useState("");
-  const [createPinConfirm, setCreatePinConfirm] = useState("");
-  const [joinCode,       setJoinCode]       = useState("");
-  const [joinPin,        setJoinPin]        = useState("");
-  const [joinPinConfirm, setJoinPinConfirm] = useState("");
-  const [switchErr,      setSwitchErr]      = useState("");
-  const [switchLoading,  setSwitchLoading]  = useState(false);
-  // notepad
+  const [editingTaskId,    setEditingTaskId]    = useState(null);
+  const [editTaskText,     setEditTaskText]     = useState("");
+  const [editTaskPoints,   setEditTaskPoints]   = useState(10);
+  const [editTaskCategory, setEditTaskCategory] = useState("");
+  const [editingRewardId,  setEditingRewardId]  = useState(null);
+  const [editRewardText,   setEditRewardText]   = useState("");
+  const [editRewardCost,   setEditRewardCost]   = useState(20);
+  const [selectedCategory,    setSelectedCategory]    = useState(null);
+  const [managingCategories,  setManagingCategories]  = useState(false);
+  const [newCategoryName,     setNewCategoryName]     = useState("");
+  const [editCategoryDrafts,  setEditCategoryDrafts]  = useState({});
+  const [showCreateForm,  setShowCreateForm]  = useState(false);
+  const [showJoinForm,    setShowJoinForm]    = useState(false);
+  const [createRole,      setCreateRole]      = useState(null);
+  const [createPin,       setCreatePin]       = useState("");
+  const [createPinConfirm,setCreatePinConfirm]= useState("");
+  const [joinCode,        setJoinCode]        = useState("");
+  const [joinRole,        setJoinRole]        = useState(null);
+  const [joinPin,         setJoinPin]         = useState("");
+  const [joinPinConfirm,  setJoinPinConfirm]  = useState("");
+  const [switchErr,       setSwitchErr]       = useState("");
+  const [switchLoading,   setSwitchLoading]   = useState(false);
   const [notepadOpen,  setNotepadOpen]  = useState(false);
   const [notepadText,  setNotepadText]  = useState("");
-
+  const [deletingRoom,  setDeletingRoom]  = useState(null);
+  const [deleteRoomPin, setDeleteRoomPin] = useState("");
+  const [deleteRoomErr, setDeleteRoomErr] = useState("");
   const unsubRef = useRef(null);
 
-  // Boot
   useEffect(() => {
     signInAnonymously(auth).catch(() => {});
     migrateLegacySession();
@@ -483,7 +466,6 @@ export default function App() {
     setNotepadText(getNotepad());
   }, []);
 
-  // Firestore real-time listener
   useEffect(() => {
     if (!session || !unlocked) return;
     if (unsubRef.current) unsubRef.current();
@@ -493,14 +475,13 @@ export default function App() {
     return () => unsubRef.current?.();
   }, [session, unlocked]);
 
-  // Daily reset — keep items, reset done/claimed flags only
   useEffect(() => {
     if (!roomData || !session) return;
     const today = todayKey();
     if (roomData.lastDate === today) return;
     saveRoom(session.roomCode, {
       ...roomData,
-      tasks:   roomData.tasks.map(t   => ({ ...t, done:    false })),
+      tasks:   roomData.tasks.map(t => ({ ...t, done:    false })),
       rewards: roomData.rewards.map(r => ({ ...r, claimed: false })),
       lastDate: today,
     });
@@ -515,21 +496,17 @@ export default function App() {
     const notifs = roomData.notifications || [];
     if (notifs.length === 0 || notifs.every(n => n.read)) return;
     await saveRoom(session.roomCode, {
-      ...roomData,
-      notifications: notifs.map(n => ({ ...n, read: true })),
+      ...roomData, notifications: notifs.map(n => ({ ...n, read: true })),
     });
   };
 
-  // ── Tasks ─────────────────────────────────────────────────────
   const toggleTask = async (id) => {
     const task = roomData.tasks.find(t => t.id === id);
     if (!task.done) {
       if (session.role !== "doer") return showToast("只有任務執行者可以勾選任務 🙋");
       const tasks = roomData.tasks.map(t => t.id === id ? { ...t, done: true } : t);
       const updated = {
-        ...roomData,
-        points: roomData.points + task.points,
-        tasks,
+        ...roomData, points: roomData.points + task.points, tasks,
         notifications: [...(roomData.notifications || []), {
           id: genId("n"), type: "task_done",
           msg: `✅ 完成「${task.text}」+${task.points} 積分`, read: false, time: Date.now(),
@@ -542,12 +519,10 @@ export default function App() {
       if (session.role !== "giver") return showToast("只有獎勵發放者可以取消勾選 🎁");
       const tasks = roomData.tasks.map(t => t.id === id ? { ...t, done: false } : t);
       const updated = {
-        ...roomData,
-        points: roomData.points - task.points,
-        tasks,
+        ...roomData, points: roomData.points - task.points, tasks,
         notifications: [...(roomData.notifications || []), {
           id: genId("n"), type: "task_undone",
-          msg: `↩️ 取消「${task.text}」的完成狀態，已扣回 ${task.points} 積分`, read: false, time: Date.now(),
+          msg: `↩️ 取消「${task.text}」完成狀態，扣回 ${task.points} 積分`, read: false, time: Date.now(),
         }],
       };
       showToast(`已取消，扣回 ${task.points} 積分`);
@@ -563,47 +538,35 @@ export default function App() {
       ...roomData,
       tasks: [...roomData.tasks, {
         id: genId("t"), text: newTask.trim(),
-        points: Math.max(1, Number(newTaskPts) || 1),
-        done: false, categoryId: catId,
+        points: Math.max(1, Number(newTaskPts) || 1), done: false, categoryId: catId,
       }],
     });
     setNewTask(""); showToast("任務已加入！");
   };
 
   const startEditTask = (task) => {
-    setEditingTaskId(task.id);
-    setEditTaskText(task.text);
-    setEditTaskPoints(task.points);
-    setEditTaskCategory(task.categoryId || "");
+    setEditingTaskId(task.id); setEditTaskText(task.text);
+    setEditTaskPoints(task.points); setEditTaskCategory(task.categoryId || "");
   };
   const cancelEditTask = () => setEditingTaskId(null);
-
   const saveEditTask = async () => {
     if (!editTaskText.trim()) return;
     const categories = roomData.categories || [];
     const catId = categories.length > 0 ? (editTaskCategory || null) : null;
     await saveRoom(session.roomCode, {
       ...roomData,
-      tasks: roomData.tasks.map(t =>
-        t.id === editingTaskId
-          ? { ...t, text: editTaskText.trim(), points: Math.max(1, Number(editTaskPoints) || 1), categoryId: catId }
-          : t
-      ),
+      tasks: roomData.tasks.map(t => t.id === editingTaskId
+        ? { ...t, text: editTaskText.trim(), points: Math.max(1, Number(editTaskPoints) || 1), categoryId: catId }
+        : t),
     });
-    setEditingTaskId(null);
-    showToast("任務已更新！");
+    setEditingTaskId(null); showToast("任務已更新！");
   };
-
   const deleteTask = async (id) => {
     if (!window.confirm("確定要刪除這個任務嗎？")) return;
-    await saveRoom(session.roomCode, {
-      ...roomData,
-      tasks: roomData.tasks.filter(t => t.id !== id),
-    });
+    await saveRoom(session.roomCode, { ...roomData, tasks: roomData.tasks.filter(t => t.id !== id) });
     showToast("任務已刪除");
   };
 
-  // ── Categories ───────────────────────────────────────────────
   const addCategory = async () => {
     if (!newCategoryName.trim()) return;
     await saveRoom(session.roomCode, {
@@ -612,7 +575,6 @@ export default function App() {
     });
     setNewCategoryName("");
   };
-
   const renameCategory = async (id) => {
     const draft = editCategoryDrafts[id];
     if (draft === undefined || !draft.trim()) return;
@@ -622,7 +584,6 @@ export default function App() {
     });
     setEditCategoryDrafts(prev => { const n = { ...prev }; delete n[id]; return n; });
   };
-
   const deleteCategory = async (id) => {
     if (!window.confirm("確定要刪除這個分類嗎？分類下的任務會變成「未分類」。")) return;
     await saveRoom(session.roomCode, {
@@ -633,7 +594,6 @@ export default function App() {
     if (selectedCategory === id) setSelectedCategory(null);
   };
 
-  // ── Rewards ───────────────────────────────────────────────────
   const claimReward = async (id) => {
     if (session.role !== "giver") return showToast("只有獎勵發放者可以兌換 🎁");
     const reward = roomData.rewards.find(r => r.id === id);
@@ -642,16 +602,15 @@ export default function App() {
     boom();
     await saveRoom(session.roomCode, {
       ...roomData,
-      points:  roomData.points - reward.cost,
+      points: roomData.points - reward.cost,
       rewards: roomData.rewards.map(r => r.id === id ? { ...r, claimed: true } : r),
       notifications: [...(roomData.notifications || []), {
         id: genId("n"), type: "reward_claimed",
         msg: `🎁 兌換了「${reward.text}」-${reward.cost} 積分`, read: false, time: Date.now(),
       }],
-});
+    });
     showToast(`🎁 「${reward.text}」兌換成功！`);
   };
-
   const addReward = async () => {
     if (!newReward.trim()) return;
     await saveRoom(session.roomCode, {
@@ -663,53 +622,36 @@ export default function App() {
     });
     setNewReward(""); showToast("獎勵已加入！");
   };
-
   const startEditReward = (reward) => {
-    setEditingRewardId(reward.id);
-    setEditRewardText(reward.text);
-    setEditRewardCost(reward.cost);
+    setEditingRewardId(reward.id); setEditRewardText(reward.text); setEditRewardCost(reward.cost);
   };
   const cancelEditReward = () => setEditingRewardId(null);
-
   const saveEditReward = async () => {
     if (!editRewardText.trim()) return;
     await saveRoom(session.roomCode, {
       ...roomData,
-      rewards: roomData.rewards.map(r =>
-        r.id === editingRewardId
-          ? { ...r, text: editRewardText.trim(), cost: Math.max(1, Number(editRewardCost) || 1) }
-          : r
-      ),
+      rewards: roomData.rewards.map(r => r.id === editingRewardId
+        ? { ...r, text: editRewardText.trim(), cost: Math.max(1, Number(editRewardCost) || 1) } : r),
     });
-    setEditingRewardId(null);
-    showToast("獎勵已更新！");
+    setEditingRewardId(null); showToast("獎勵已更新！");
   };
-
   const deleteReward = async (id) => {
     if (!window.confirm("確定要刪除這個獎勵嗎？")) return;
-    await saveRoom(session.roomCode, {
-      ...roomData,
-      rewards: roomData.rewards.filter(r => r.id !== id),
-    });
+    await saveRoom(session.roomCode, { ...roomData, rewards: roomData.rewards.filter(r => r.id !== id) });
     showToast("獎勵已刪除");
   };
 
-  // ── Room switching ───────────────────────────────────────────
   const switchToRoom = (roomCode) => {
-    const rooms = getRooms();
-    const target = rooms.find(r => r.roomCode === roomCode);
+    const target = getRooms().find(r => r.roomCode === roomCode);
     if (!target) return;
-    setActiveCode(roomCode);
-    setRoomData(null);
-    setSession(target);
-    setPage("tasks");
-    setSelectedCategory(null);
+    setActiveCode(roomCode); setRoomData(null); setSession(target);
+    setPage("tasks"); setSelectedCategory(null);
     showToast(`已切換到房間 #${roomCode}`);
   };
 
   const handleCreateRoom = async () => {
-    if (!createRole)               return setSwitchErr("請選擇角色");
-    if (createPin.length < 4)      return setSwitchErr("請設定至少 4 位數的 PIN 碼");
+    if (!createRole)                    return setSwitchErr("請選擇角色");
+    if (createPin.length < 4)           return setSwitchErr("請設定至少 4 位數的 PIN 碼");
     if (createPin !== createPinConfirm) return setSwitchErr("兩次 PIN 碼不一致");
     setSwitchLoading(true); setSwitchErr("");
     try {
@@ -717,67 +659,66 @@ export default function App() {
       await createRoom(code, createRole);
       const newSession = { roomCode: code, role: createRole, pin: createPin };
       setRooms([...getRooms(), newSession]);
-      setActiveCode(code);
-      setSession(newSession);
-      setRoomData(null);
-      setShowCreateForm(false);
-      setCreatePin(""); setCreatePinConfirm(""); setCreateRole(null);
+      setActiveCode(code); setSession(newSession); setRoomData(null);
+      setShowCreateForm(false); setCreatePin(""); setCreatePinConfirm(""); setCreateRole(null);
       setPage("tasks"); setSelectedCategory(null);
       showToast(`新房間 #${code} 已建立！`);
     } catch (e) {
-      setSwitchErr(e.code === "auth/operation-not-allowed"
-        ? "請先在 Firebase 開啟匿名登入" : "建立失敗：" + e.message);
+      setSwitchErr(e.code === "auth/operation-not-allowed" ? "請先在 Firebase 開啟匿名登入" : "建立失敗：" + e.message);
     }
     setSwitchLoading(false);
   };
 
   const handleJoinRoom = async () => {
-    if (!joinCode.trim())          return setSwitchErr("請輸入房間代碼");
-    if (joinPin.length < 4)        return setSwitchErr("請設定至少 4 位數的 PIN 碼");
-    if (joinPin !== joinPinConfirm) return setSwitchErr("兩次 PIN 碼不一致");
+    if (!joinCode.trim())               return setSwitchErr("請輸入房間代碼");
+    if (!joinRole)                      return setSwitchErr("請選擇你的角色");
+    if (joinPin.length < 4)             return setSwitchErr("請設定至少 4 位數的 PIN 碼");
+    if (joinPin !== joinPinConfirm)     return setSwitchErr("兩次 PIN 碼不一致");
     const upperCode = joinCode.trim().toUpperCase();
     if (getRooms().some(r => r.roomCode === upperCode)) return setSwitchErr("這個房間已經在你的清單裡了");
     setSwitchLoading(true); setSwitchErr("");
     try {
       const rd = await fetchRoom(upperCode);
       if (!rd) { setSwitchLoading(false); return setSwitchErr("找不到此房間，請確認代碼"); }
-      const takenRole  = Object.keys(rd.roles || {})[0];
-      const joinedRole = takenRole === "doer" ? "giver" : "doer";
-      await updateDoc(roomRef(upperCode), { [`roles.${joinedRole}`]: true });
-      const newSession = { roomCode: upperCode, role: joinedRole, pin: joinPin };
+      await updateDoc(roomRef(upperCode), { [`roles.${joinRole}`]: true });
+      const newSession = { roomCode: upperCode, role: joinRole, pin: joinPin };
       setRooms([...getRooms(), newSession]);
-      setActiveCode(upperCode);
-      setSession(newSession);
-      setRoomData(null);
-      setShowJoinForm(false);
-      setJoinCode(""); setJoinPin(""); setJoinPinConfirm("");
+      setActiveCode(upperCode); setSession(newSession); setRoomData(null);
+      setShowJoinForm(false); setJoinCode(""); setJoinPin(""); setJoinPinConfirm(""); setJoinRole(null);
       setPage("tasks"); setSelectedCategory(null);
       showToast(`已加入房間 #${upperCode}！`);
     } catch (e) {
-      setSwitchErr(e.code === "auth/operation-not-allowed"
-        ? "請先在 Firebase 開啟匿名登入" : "加入失敗：" + e.message);
+      setSwitchErr(e.code === "auth/operation-not-allowed" ? "請先在 Firebase 開啟匿名登入" : "加入失敗：" + e.message);
     }
     setSwitchLoading(false);
   };
 
+  const startDeleteRoom = (roomCode) => { setDeletingRoom(roomCode); setDeleteRoomPin(""); setDeleteRoomErr(""); };
+  const cancelDeleteRoom = () => { setDeletingRoom(null); setDeleteRoomPin(""); setDeleteRoomErr(""); };
+  const confirmDeleteRoom = () => {
+    const rooms = getRooms();
+    const target = rooms.find(r => r.roomCode === deletingRoom);
+    if (!target) return;
+    if (deleteRoomPin !== target.pin) { setDeleteRoomErr("PIN 碼錯誤，無法刪除"); return; }
+    const newRooms = rooms.filter(r => r.roomCode !== deletingRoom);
+    setRooms(newRooms);
+    if (session.roomCode === deletingRoom) {
+      if (newRooms.length > 0) {
+        setActiveCode(newRooms[0].roomCode); setSession(newRooms[0]); setRoomData(null);
+        setPage("tasks"); showToast("房間已刪除，已切換到其他房間");
+      } else { resetAll(); return; }
+    } else { showToast(`房間 #${deletingRoom} 已從裝置移除`); }
+    setDeletingRoom(null); setDeleteRoomPin("");
+  };
+
   const resetAll = () => {
-    setRooms([]);
-    LS.del("activeRoomCode");
-    setSession(null);
-    setUnlocked(false);
-    setRoomData(null);
+    setRooms([]); LS.del("activeRoomCode");
+    setSession(null); setUnlocked(false); setRoomData(null);
   };
-
-  const handleNotepadChange = (text) => {
-    setNotepadText(text);
-    setNotepadLS(text);
-  };
-
-  // ── Screens ───────────────────────────────────────────────────
+  const handleNotepadChange = (text) => { setNotepadText(text); setNotepadLS(text); };
   if (!session) {
     return <SetupScreen onDone={({ roomCode, role, pin }) => {
-      setSession({ roomCode, role, pin });
-      setUnlocked(true);
+      setSession({ roomCode, role, pin }); setUnlocked(true);
     }} />;
   }
   if (!unlocked) {
@@ -785,8 +726,8 @@ export default function App() {
   }
   if (!roomData) {
     return (
-      <div style={{ minHeight:"100vh", background:`linear-gradient(160deg, ${C.bg}, ${C.bgEnd})`, display:"flex",
-        alignItems:"center", justifyContent:"center", color:C.textMuted,
+      <div style={{ minHeight:"100vh", background:`linear-gradient(160deg, ${C.bg}, ${C.bgEnd})`,
+        display:"flex", alignItems:"center", justifyContent:"center", color:C.textMuted,
         fontFamily:"sans-serif", flexDirection:"column", gap:12 }}>
         <div style={{ fontSize:32 }}>⏳</div><div>連接房間中…</div>
       </div>
@@ -802,10 +743,12 @@ export default function App() {
   const allRooms   = getRooms();
   const otherRooms = allRooms.filter(r => r.roomCode !== session.roomCode);
 
-  // group notifications by date for history view
   const notifsByDate = {};
   (roomData.notifications || []).forEach(n => {
-    const dateKey = new Date(n.time).toISOString().slice(0, 10);
+    const shifted = new Date(new Date(n.time).getTime() - 3 * 60 * 60 * 1000);
+    const dateKey = shifted.toLocaleDateString("zh-TW", {
+      timeZone: "Asia/Taipei", year: "numeric", month: "2-digit", day: "2-digit",
+    }).replace(/\//g, "-");
     (notifsByDate[dateKey] ||= []).push(n);
   });
   const historyDates = Object.keys(notifsByDate).sort().reverse();
@@ -814,8 +757,7 @@ export default function App() {
     <div style={{
       minHeight:"100vh", background:`linear-gradient(160deg, ${C.bg}, ${C.bgEnd})`,
       fontFamily:"'Noto Sans TC','PingFang TC',sans-serif",
-      color:C.text, display:"flex", flexDirection:"column",
-      maxWidth:430, margin:"0 auto",
+      color:C.text, display:"flex", flexDirection:"column", maxWidth:430, margin:"0 auto",
     }}>
       <Confetti active={confetti} />
       <Toast msg={toast} />
@@ -831,15 +773,13 @@ export default function App() {
           </div>
           <div style={{ display:"flex", gap:10, alignItems:"center" }}>
             <button onClick={() => { setPage("history"); markAllRead(); }} style={{
-              position:"relative", background:"none", border:"none",
-              cursor:"pointer", fontSize:20, padding:4,
+              position:"relative", background:"none", border:"none", cursor:"pointer", fontSize:20, padding:4,
             }}>
               🔔
               {unreadCount > 0 && (
                 <span style={{
-                  position:"absolute", top:0, right:0,
-                  background:C.pinkDark, color:"white", borderRadius:"50%",
-                  width:16, height:16, fontSize:9, fontWeight:700,
+                  position:"absolute", top:0, right:0, background:C.pinkDark, color:"white",
+                  borderRadius:"50%", width:16, height:16, fontSize:9, fontWeight:700,
                   display:"flex", alignItems:"center", justifyContent:"center",
                 }}>{unreadCount}</span>
               )}
@@ -854,7 +794,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Role badge */}
         <div style={{
           display:"inline-flex", alignItems:"center", gap:6, marginTop:10,
           background: isDoer ? "#EDE6FB" : "#FFE9EF",
@@ -889,7 +828,6 @@ export default function App() {
 
         {/* TASKS */}
         {page === "tasks" && (<>
-          {/* Category tabs */}
           <div style={{ display:"flex", gap:8, overflowX:"auto", marginBottom:14, paddingBottom:2 }}>
             <button onClick={() => setSelectedCategory(null)} style={pillBtn(selectedCategory === null)}>全部</button>
             {categories.map(cat => (
@@ -897,13 +835,10 @@ export default function App() {
                 {cat.name}
               </button>
             ))}
-            <button onClick={() => setManagingCategories(v => !v)} style={{
-              ...pillBtn(managingCategories, C.pink),
-              fontSize:13,
-            }}>⚙️ 分類</button>
+            <button onClick={() => setManagingCategories(v => !v)}
+              style={{ ...pillBtn(managingCategories, C.pink), fontSize:13 }}>⚙️ 分類</button>
           </div>
 
-          {/* Category management panel */}
           {managingCategories && (
             <div style={{ ...cardStyle, marginBottom:14, border:`1px dashed ${C.pink}` }}>
               <div style={{ fontSize:12, color:C.textMuted, marginBottom:10, fontWeight:600 }}>管理分類</div>
@@ -935,20 +870,21 @@ export default function App() {
             </div>
           )}
 
-          {/* Task list */}
           {filteredTasks.length === 0 && (
             <div style={{ textAlign:"center", color:C.textMuted, marginTop:40 }}>
               <div style={{ fontSize:36 }}>📋</div>
-              <div style={{ marginTop:8 }}>{categories.length>0 && selectedCategory!==null ? "這個分類還沒有任務" : "還沒有任務，在下方新增吧！"}</div>
+              <div style={{ marginTop:8 }}>
+                {categories.length > 0 && selectedCategory !== null ? "這個分類還沒有任務" : "還沒有任務，在下方新增吧！"}
+              </div>
             </div>
           )}
+
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {filteredTasks.map(task => (
               editingTaskId === task.id ? (
                 <div key={task.id} style={{ ...cardStyle, border:`1px solid ${C.accentBorder}` }}>
                   <input value={editTaskText} onChange={e => setEditTaskText(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && saveEditTask()}
-                    style={inputStyle} />
+                    onKeyDown={e => e.key === "Enter" && saveEditTask()} style={inputStyle} />
                   <div style={{ display:"flex", gap:8, marginTop:8 }}>
                     <input type="number" min="1" value={editTaskPoints}
                       onChange={e => setEditTaskPoints(e.target.value)}
@@ -1006,7 +942,6 @@ export default function App() {
             ))}
           </div>
 
-          {/* Add task */}
           <div style={{ marginTop:20, ...cardStyle, border:`1px dashed ${C.accentBorder}` }}>
             <div style={{ fontSize:12, color:C.textMuted, marginBottom:8 }}>新增任務</div>
             <input value={newTask} onChange={e => setNewTask(e.target.value)}
@@ -1022,7 +957,9 @@ export default function App() {
                   {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               )}
-              <button onClick={addTask} style={{ ...primaryBtn, flex: categories.length>0 ? "0 0 auto" : 1, padding:"0 18px" }}>＋ 加入</button>
+              <button onClick={addTask} style={{
+                ...primaryBtn, flex: categories.length > 0 ? "0 0 auto" : 1, padding:"0 18px",
+              }}>＋ 加入</button>
             </div>
           </div>
         </>)}
@@ -1042,8 +979,7 @@ export default function App() {
                 return (
                   <div key={reward.id} style={{ ...cardStyle, border:`1px solid ${C.pink}` }}>
                     <input value={editRewardText} onChange={e => setEditRewardText(e.target.value)}
-                      onKeyDown={e => e.key==="Enter" && saveEditReward()}
-                      style={inputStyle} />
+                      onKeyDown={e => e.key==="Enter" && saveEditReward()} style={inputStyle} />
                     <div style={{ display:"flex", gap:8, marginTop:8 }}>
                       <input type="number" min="1" value={editRewardCost}
                         onChange={e => setEditRewardCost(e.target.value)}
@@ -1061,8 +997,7 @@ export default function App() {
                 <div key={reward.id} style={{
                   background: reward.claimed ? C.cardDone : C.card,
                   border:`1px solid ${reward.claimed ? C.accentBorder : canAfford ? C.pink : C.border}`,
-                  borderRadius:14, padding:"14px 16px",
-                  opacity: reward.claimed ? 0.6 : 1,
+                  borderRadius:14, padding:"14px 16px", opacity: reward.claimed ? 0.6 : 1,
                   display:"flex", alignItems:"center", gap:10,
                   boxShadow:"0 2px 10px rgba(150,140,210,0.08)",
                 }}>
@@ -1080,26 +1015,23 @@ export default function App() {
                     <button onClick={() => claimReward(reward.id)} style={{
                       background: (!isDoer && canAfford) ? `linear-gradient(135deg, ${C.pink}, ${C.pinkDark})` : C.border,
                       color: (!isDoer && canAfford) ? "#FFFFFF" : C.textMuted,
-                      border:"none", borderRadius:10, padding:"8px 14px",
-                      fontSize:12, fontWeight:700,
+                      border:"none", borderRadius:10, padding:"8px 14px", fontSize:12, fontWeight:700,
                       cursor: !isDoer ? "pointer" : "default", flexShrink:0,
                     }}>
                       {isDoer ? "不可兌換" : canAfford ? "兌換" : "積分不足"}
                     </button>
                   )}
                   {reward.claimed && <div style={{ fontSize:20 }}>✅</div>}
-                  {!isDoer && (
-                    <>
-                      <button onClick={() => startEditReward(reward)} style={{
-                        background:"none", border:"none", color:C.textMuted,
-                        fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
-                      }}>✏️</button>
-                      <button onClick={() => deleteReward(reward.id)} style={{
-                        background:"none", border:"none", color:C.textMuted,
-                        fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
-                      }}>🗑️</button>
-                    </>
-                  )}
+                  {!isDoer && (<>
+                    <button onClick={() => startEditReward(reward)} style={{
+                      background:"none", border:"none", color:C.textMuted,
+                      fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
+                    }}>✏️</button>
+                    <button onClick={() => deleteReward(reward.id)} style={{
+                      background:"none", border:"none", color:C.textMuted,
+                      fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
+                    }}>🗑️</button>
+                  </>)}
                 </div>
               );
             })}
@@ -1125,7 +1057,7 @@ export default function App() {
           </div>
         </>)}
 
-        {/* HISTORY (merged with notifications) */}
+        {/* HISTORY */}
         {page === "history" && (<>
           {historyDates.length === 0 && (
             <div style={{ textAlign:"center", color:C.textMuted, marginTop:40 }}>
@@ -1137,10 +1069,7 @@ export default function App() {
           <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
             {historyDates.map(date => (
               <div key={date}>
-                <div style={{
-                  fontSize:12, fontWeight:700, color:C.accentDark,
-                  marginBottom:8, paddingLeft:4,
-                }}>
+                <div style={{ fontSize:12, fontWeight:700, color:C.accentDark, marginBottom:8, paddingLeft:4 }}>
                   {fmtDateShort(date)}
                   {date === todayKey() && (
                     <span style={{
@@ -1166,50 +1095,96 @@ export default function App() {
           </div>
         </>)}
 
-        {/* SWITCH ROOMS */}
+        {/* SWITCH */}
         {page === "switch" && (<>
-          {/* Current room */}
           <div style={{ fontSize:12, color:C.textMuted, marginBottom:8, fontWeight:600 }}>目前房間</div>
           <div style={{ ...cardStyle, border:`1px solid ${C.accentBorder}`, marginBottom:16 }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div style={{ fontSize:20, fontWeight:800, letterSpacing:5, color:C.accentDark }}>{session.roomCode}</div>
-              <div style={{
-                display:"flex", alignItems:"center", gap:5,
-                background: isDoer ? "#EDE6FB" : "#FFE9EF",
-                borderRadius:14, padding:"4px 10px",
-              }}>
-                <span>{roleIcon(session.role)}</span>
-                <span style={{ fontSize:11, fontWeight:600, color: isDoer ? C.accentDark : C.pinkDark }}>{roleLabel(session.role)}</span>
+              <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                <div style={{
+                  display:"flex", alignItems:"center", gap:5,
+                  background: isDoer ? "#EDE6FB" : "#FFE9EF", borderRadius:14, padding:"4px 10px",
+                }}>
+                  <span>{roleIcon(session.role)}</span>
+                  <span style={{ fontSize:11, fontWeight:600, color: isDoer ? C.accentDark : C.pinkDark }}>
+                    {roleLabel(session.role)}
+                  </span>
+                </div>
+                <button onClick={() => startDeleteRoom(session.roomCode)} style={{
+                  background:"none", border:`1px solid ${C.pink}60`, color:C.pinkDark,
+                  borderRadius:8, padding:"4px 10px", fontSize:11, cursor:"pointer",
+                }}>移除</button>
               </div>
             </div>
           </div>
 
-          {/* Other rooms */}
-          {otherRooms.length > 0 && (
-            <>
-              <div style={{ fontSize:12, color:C.textMuted, marginBottom:8, fontWeight:600 }}>其他房間（點擊切換）</div>
-              <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:16 }}>
-                {otherRooms.map(r => (
-                  <div key={r.roomCode} onClick={() => switchToRoom(r.roomCode)} style={{
-                    ...cardStyle, cursor:"pointer",
-                    display:"flex", justifyContent:"space-between", alignItems:"center",
+          {otherRooms.length > 0 && (<>
+            <div style={{ fontSize:12, color:C.textMuted, marginBottom:8, fontWeight:600 }}>其他房間（點擊切換）</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:16 }}>
+              {otherRooms.map(r => (
+                <div key={r.roomCode} style={{
+                  ...cardStyle, display:"flex", justifyContent:"space-between", alignItems:"center",
+                }}>
+                  <div onClick={() => switchToRoom(r.roomCode)} style={{
+                    display:"flex", alignItems:"center", gap:10, flex:1, cursor:"pointer",
                   }}>
                     <div style={{ fontSize:16, fontWeight:700, letterSpacing:4, color:C.text }}>{r.roomCode}</div>
                     <div style={{
                       display:"flex", alignItems:"center", gap:5,
-                      background: r.role==="doer" ? "#EDE6FB" : "#FFE9EF",
-                      borderRadius:14, padding:"4px 10px",
+                      background: r.role==="doer" ? "#EDE6FB" : "#FFE9EF", borderRadius:14, padding:"4px 10px",
                     }}>
                       <span>{roleIcon(r.role)}</span>
-                      <span style={{ fontSize:11, fontWeight:600, color: r.role==="doer" ? C.accentDark : C.pinkDark }}>{roleLabel(r.role)}</span>
+                      <span style={{ fontSize:11, fontWeight:600, color: r.role==="doer" ? C.accentDark : C.pinkDark }}>
+                        {roleLabel(r.role)}
+                      </span>
                     </div>
                   </div>
-                ))}
+                  <button onClick={() => startDeleteRoom(r.roomCode)} style={{
+                    background:"none", border:`1px solid ${C.pink}60`, color:C.pinkDark,
+                    borderRadius:8, padding:"4px 10px", fontSize:11, cursor:"pointer", marginLeft:8, flexShrink:0,
+                  }}>移除</button>
+                </div>
+              ))}
+            </div>
+          </>)}
+
+          {deletingRoom && (
+            <div style={{
+              position:"fixed", inset:0, background:"rgba(80,70,120,0.35)",
+              display:"flex", alignItems:"center", justifyContent:"center", zIndex:400, padding:24,
+            }}>
+              <div style={{
+                background:"#FFFFFF", borderRadius:18, padding:24, width:"100%", maxWidth:300,
+                boxShadow:"0 8px 40px rgba(150,140,210,0.3)",
+              }}>
+                <div style={{ fontSize:16, fontWeight:700, color:C.text, marginBottom:4 }}>
+                  移除房間 #{deletingRoom}
+                </div>
+                <div style={{ fontSize:12, color:C.textMuted, marginBottom:16 }}>
+                  輸入此房間的 PIN 碼確認移除。<br/>
+                  只會從這台裝置移除，房間資料不受影響。
+                </div>
+                <input type="password" value={deleteRoomPin}
+                  onChange={e => { setDeleteRoomPin(e.target.value); setDeleteRoomErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && confirmDeleteRoom()}
+                  placeholder="輸入 PIN 碼" autoFocus
+                  style={{ ...inputStyle, textAlign:"center", fontSize:20, letterSpacing:8 }} />
+                {deleteRoomErr && (
+                  <div style={{ color:C.pinkDark, fontSize:12, marginTop:8, textAlign:"center" }}>{deleteRoomErr}</div>
+                )}
+                <div style={{ display:"flex", gap:8, marginTop:14 }}>
+                  <button onClick={cancelDeleteRoom} style={{ ...secondaryBtn, flex:1, padding:"10px 0" }}>取消</button>
+                  <button onClick={confirmDeleteRoom} style={{
+                    flex:1, padding:"10px 0", borderRadius:10, border:"none",
+                    background:`linear-gradient(135deg, ${C.pink}, ${C.pinkDark})`,
+                    color:"#FFFFFF", fontSize:13, fontWeight:700, cursor:"pointer",
+                  }}>確認移除</button>
+                </div>
               </div>
-            </>
+            </div>
           )}
 
-          {/* Action buttons */}
           <div style={{ display:"flex", gap:8, marginBottom:12 }}>
             <button onClick={() => { setShowCreateForm(v=>!v); setShowJoinForm(false); setSwitchErr(""); }} style={{
               ...primaryBtn, flex:1, padding:"12px 0",
@@ -1221,7 +1196,6 @@ export default function App() {
             }}>🔗 加入房間</button>
           </div>
 
-          {/* Create room form */}
           {showCreateForm && (
             <div style={{ ...cardStyle, border:`1px dashed ${C.accentBorder}`, marginBottom:12 }}>
               <div style={{ fontSize:12, color:C.textMuted, marginBottom:8 }}>選擇你在新房間的角色</div>
@@ -1242,34 +1216,50 @@ export default function App() {
               <input type="password" value={createPinConfirm} onChange={e => setCreatePinConfirm(e.target.value)}
                 placeholder="再輸入一次" style={{ ...inputStyle, marginTop:8 }} />
               {switchErr && (
-                <div style={{ color:C.pinkDark, fontSize:12, marginTop:8, background:"#FFF1F4", borderRadius:8, padding:"8px 12px" }}>{switchErr}</div>
+                <div style={{ color:C.pinkDark, fontSize:12, marginTop:8,
+                  background:"#FFF1F4", borderRadius:8, padding:"8px 12px" }}>{switchErr}</div>
               )}
               <button onClick={handleCreateRoom} disabled={switchLoading} style={{
-                ...primaryBtn, width:"100%", padding:"11px 0", marginTop:10, opacity: switchLoading?0.6:1,
+                ...primaryBtn, width:"100%", padding:"11px 0", marginTop:10, opacity: switchLoading ? 0.6 : 1,
               }}>{switchLoading ? "處理中…" : "建立房間"}</button>
             </div>
           )}
 
-          {/* Join room form */}
           {showJoinForm && (
             <div style={{ ...cardStyle, border:`1px dashed ${C.pink}`, marginBottom:12 }}>
               <div style={{ fontSize:12, color:C.textMuted, marginBottom:8 }}>輸入房間代碼</div>
               <input value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())}
                 placeholder="例：AB12CD" maxLength={6}
                 style={{ ...inputStyle, letterSpacing:5, fontWeight:700, fontSize:18, textAlign:"center" }} />
-              <div style={{ fontSize:12, color:C.textMuted, marginTop:10, marginBottom:8 }}>設定你的 PIN 碼</div>
+              <div style={{ fontSize:12, color:C.textMuted, marginTop:12, marginBottom:8 }}>
+                選擇你的角色（綁定後不可更改）
+              </div>
+              <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+                {[["doer","🙋","任務執行者"],["giver","🎁","獎勵發放者"]].map(([r,icon,name]) => (
+                  <div key={r} onClick={() => setJoinRole(r)} style={{
+                    flex:1, background: joinRole===r ? C.cardDone : C.card,
+                    border:`2px solid ${joinRole===r ? C.accent : C.border}`,
+                    borderRadius:10, padding:10, cursor:"pointer", textAlign:"center",
+                  }}>
+                    <div style={{ fontSize:20 }}>{icon}</div>
+                    <div style={{ fontSize:11, fontWeight:700, marginTop:2 }}>{name}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize:12, color:C.textMuted, marginBottom:6 }}>設定你的 PIN 碼</div>
               <input type="password" value={joinPin} onChange={e => setJoinPin(e.target.value)}
                 placeholder="PIN 碼" style={inputStyle} />
               <input type="password" value={joinPinConfirm} onChange={e => setJoinPinConfirm(e.target.value)}
                 placeholder="再輸入一次" style={{ ...inputStyle, marginTop:8 }} />
               {switchErr && (
-                <div style={{ color:C.pinkDark, fontSize:12, marginTop:8, background:"#FFF1F4", borderRadius:8, padding:"8px 12px" }}>{switchErr}</div>
+                <div style={{ color:C.pinkDark, fontSize:12, marginTop:8,
+                  background:"#FFF1F4", borderRadius:8, padding:"8px 12px" }}>{switchErr}</div>
               )}
               <button onClick={handleJoinRoom} disabled={switchLoading} style={{
                 width:"100%", padding:"11px 0", marginTop:10, borderRadius:10, border:"none",
                 background:`linear-gradient(135deg, ${C.pink}, ${C.pinkDark})`,
                 color:"#FFFFFF", fontSize:13, fontWeight:700, cursor:"pointer",
-                opacity: switchLoading?0.6:1,
+                opacity: switchLoading ? 0.6 : 1,
               }}>{switchLoading ? "處理中…" : "加入房間"}</button>
             </div>
           )}
@@ -1278,15 +1268,12 @@ export default function App() {
         </>)}
       </div>
 
-      {/* Notepad widget — bottom right, only on switch page */}
       {page === "switch" && (
         notepadOpen ? (
           <div style={{
-            position:"fixed", bottom:90, right:16, zIndex:150,
-            width:220, maxWidth:"70vw",
-            background:"#FFFFFF", borderRadius:14,
-            border:`1px solid ${C.accentBorder}`, boxShadow:C.shadow,
-            padding:10,
+            position:"fixed", bottom:90, right:16, zIndex:150, width:220, maxWidth:"70vw",
+            background:"#FFFFFF", borderRadius:14, border:`1px solid ${C.accentBorder}`,
+            boxShadow:C.shadow, padding:10,
           }}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
               <span style={{ fontSize:11, color:C.textMuted, fontWeight:600 }}>📝 房號筆記</span>
@@ -1299,8 +1286,7 @@ export default function App() {
               style={{
                 width:"100%", minHeight:90, background:C.bg, border:`1px solid ${C.border}`,
                 borderRadius:8, padding:8, fontSize:12, color:C.text,
-                outline:"none", resize:"vertical", boxSizing:"border-box",
-                fontFamily:"inherit",
+                outline:"none", resize:"vertical", boxSizing:"border-box", fontFamily:"inherit",
               }} />
           </div>
         ) : (
@@ -1317,10 +1303,8 @@ export default function App() {
       {/* Bottom Nav */}
       <div style={{
         position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)",
-        width:"100%", maxWidth:430,
-        background:"#FFFFFFCC", backdropFilter:"blur(20px)",
-        borderTop:`1px solid ${C.border}`,
-        display:"flex", padding:"10px 8px 20px", gap:4,
+        width:"100%", maxWidth:430, background:"#FFFFFFCC", backdropFilter:"blur(20px)",
+        borderTop:`1px solid ${C.border}`, display:"flex", padding:"10px 8px 20px", gap:4,
       }}>
         {[["tasks","☑️","任務"],["rewards","🎁","獎勵"],["history","📅","歷史"],["switch","🔁","切換"]].map(([key,icon,label]) => (
           <button key={key} onClick={() => { setPage(key); if(key==="history") markAllRead(); }} style={{
@@ -1330,7 +1314,7 @@ export default function App() {
             borderRadius:12, cursor:"pointer", position:"relative",
           }}>
             <span style={{ fontSize:18 }}>{icon}</span>
-            {key==="history" && unreadCount>0 && (
+            {key==="history" && unreadCount > 0 && (
               <span style={{
                 position:"absolute", top:4, right:"calc(50% - 18px)",
                 background:C.pinkDark, color:"white", borderRadius:"50%",
@@ -1346,4 +1330,4 @@ export default function App() {
       </div>
     </div>
   );
-            }
+      }
