@@ -45,7 +45,6 @@ const C = {
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────
-// 台灣時間凌晨 03:00 為換日點
 const todayKey = () => {
   const now = new Date();
   const shifted = new Date(now.getTime() - 3 * 60 * 60 * 1000);
@@ -105,7 +104,6 @@ const DEFAULT_REWARDS = [
   { id: "r3", text: "週末午睡不限時", cost: 60, claimed: false },
 ];
 
-// ─── Firestore ────────────────────────────────────────────────────
 const roomRef = (code) => doc(db, "rooms", code);
 
 async function createRoom(code, creatorRole) {
@@ -117,12 +115,10 @@ async function createRoom(code, creatorRole) {
   await setDoc(roomRef(code), data);
   return data;
 }
-
 async function fetchRoom(code) {
   const snap = await getDoc(roomRef(code));
   return snap.exists() ? snap.data() : null;
 }
-
 async function saveRoom(code, data) {
   await setDoc(roomRef(code), data, { merge: true });
 }
@@ -168,7 +164,6 @@ function Confetti({ active }) {
   }} />;
 }
 
-// ─── Toast ────────────────────────────────────────────────────────
 function Toast({ msg }) {
   if (!msg) return null;
   return (
@@ -182,7 +177,6 @@ function Toast({ msg }) {
   );
 }
 
-// ─── 共用樣式 ─────────────────────────────────────────────────────
 const inputStyle = {
   width:"100%", background:"#FFFFFF", border:`1px solid ${C.border}`,
   borderRadius:10, padding:"10px 14px", color:C.text,
@@ -434,26 +428,28 @@ export default function App() {
   const [editingRewardId,  setEditingRewardId]  = useState(null);
   const [editRewardText,   setEditRewardText]   = useState("");
   const [editRewardCost,   setEditRewardCost]   = useState(20);
-  const [selectedCategory,    setSelectedCategory]    = useState(null);
-  const [managingCategories,  setManagingCategories]  = useState(false);
-  const [newCategoryName,     setNewCategoryName]     = useState("");
-  const [editCategoryDrafts,  setEditCategoryDrafts]  = useState({});
-  const [showCreateForm,  setShowCreateForm]  = useState(false);
-  const [showJoinForm,    setShowJoinForm]    = useState(false);
-  const [createRole,      setCreateRole]      = useState(null);
-  const [createPin,       setCreatePin]       = useState("");
-  const [createPinConfirm,setCreatePinConfirm]= useState("");
-  const [joinCode,        setJoinCode]        = useState("");
-  const [joinRole,        setJoinRole]        = useState(null);
-  const [joinPin,         setJoinPin]         = useState("");
-  const [joinPinConfirm,  setJoinPinConfirm]  = useState("");
-  const [switchErr,       setSwitchErr]       = useState("");
-  const [switchLoading,   setSwitchLoading]   = useState(false);
+  const [selectedCategory,   setSelectedCategory]   = useState(null);
+  const [managingCategories, setManagingCategories] = useState(false);
+  const [newCategoryName,    setNewCategoryName]    = useState("");
+  const [editCategoryDrafts, setEditCategoryDrafts] = useState({});
+  const [showCreateForm,   setShowCreateForm]   = useState(false);
+  const [showJoinForm,     setShowJoinForm]     = useState(false);
+  const [createRole,       setCreateRole]       = useState(null);
+  const [createPin,        setCreatePin]        = useState("");
+  const [createPinConfirm, setCreatePinConfirm] = useState("");
+  const [joinCode,         setJoinCode]         = useState("");
+  const [joinRole,         setJoinRole]         = useState(null);
+  const [joinPin,          setJoinPin]          = useState("");
+  const [joinPinConfirm,   setJoinPinConfirm]   = useState("");
+  const [switchErr,        setSwitchErr]        = useState("");
+  const [switchLoading,    setSwitchLoading]    = useState(false);
   const [notepadOpen,  setNotepadOpen]  = useState(false);
   const [notepadText,  setNotepadText]  = useState("");
   const [deletingRoom,  setDeletingRoom]  = useState(null);
   const [deleteRoomPin, setDeleteRoomPin] = useState("");
   const [deleteRoomErr, setDeleteRoomErr] = useState("");
+  const [sortingTasks,   setSortingTasks]   = useState(false);
+  const [sortingRewards, setSortingRewards] = useState(false);
   const unsubRef = useRef(null);
 
   useEffect(() => {
@@ -481,8 +477,8 @@ export default function App() {
     if (roomData.lastDate === today) return;
     saveRoom(session.roomCode, {
       ...roomData,
-      tasks:   roomData.tasks.map(t => ({ ...t, done:    false })),
-      rewards: roomData.rewards.map(r => ({ ...r, claimed: false })),
+      tasks:    roomData.tasks.map(t  => ({ ...t,  done:    false })),
+      rewards:  roomData.rewards.map(r => ({ ...r, claimed: false })),
       lastDate: today,
     });
   }, [roomData, session]);
@@ -495,9 +491,7 @@ export default function App() {
     if (!roomData) return;
     const notifs = roomData.notifications || [];
     if (notifs.length === 0 || notifs.every(n => n.read)) return;
-    await saveRoom(session.roomCode, {
-      ...roomData, notifications: notifs.map(n => ({ ...n, read: true })),
-    });
+    await saveRoom(session.roomCode, { ...roomData, notifications: notifs.map(n => ({ ...n, read: true })) });
   };
 
   const toggleTask = async (id) => {
@@ -641,6 +635,22 @@ export default function App() {
     showToast("獎勵已刪除");
   };
 
+  const moveTask = async (index, dir) => {
+    const tasks = [...roomData.tasks];
+    const target = index + dir;
+    if (target < 0 || target >= tasks.length) return;
+    [tasks[index], tasks[target]] = [tasks[target], tasks[index]];
+    await saveRoom(session.roomCode, { ...roomData, tasks });
+  };
+
+  const moveReward = async (index, dir) => {
+    const rewards = [...roomData.rewards];
+    const target = index + dir;
+    if (target < 0 || target >= rewards.length) return;
+    [rewards[index], rewards[target]] = [rewards[target], rewards[index]];
+    await saveRoom(session.roomCode, { ...roomData, rewards });
+  };
+
   const switchToRoom = (roomCode) => {
     const target = getRooms().find(r => r.roomCode === roomCode);
     if (!target) return;
@@ -670,10 +680,10 @@ export default function App() {
   };
 
   const handleJoinRoom = async () => {
-    if (!joinCode.trim())               return setSwitchErr("請輸入房間代碼");
-    if (!joinRole)                      return setSwitchErr("請選擇你的角色");
-    if (joinPin.length < 4)             return setSwitchErr("請設定至少 4 位數的 PIN 碼");
-    if (joinPin !== joinPinConfirm)     return setSwitchErr("兩次 PIN 碼不一致");
+    if (!joinCode.trim())           return setSwitchErr("請輸入房間代碼");
+    if (!joinRole)                  return setSwitchErr("請選擇你的角色");
+    if (joinPin.length < 4)         return setSwitchErr("請設定至少 4 位數的 PIN 碼");
+    if (joinPin !== joinPinConfirm) return setSwitchErr("兩次 PIN 碼不一致");
     const upperCode = joinCode.trim().toUpperCase();
     if (getRooms().some(r => r.roomCode === upperCode)) return setSwitchErr("這個房間已經在你的清單裡了");
     setSwitchLoading(true); setSwitchErr("");
@@ -716,7 +726,8 @@ export default function App() {
     setSession(null); setUnlocked(false); setRoomData(null);
   };
   const handleNotepadChange = (text) => { setNotepadText(text); setNotepadLS(text); };
-  if (!session) {
+
+if (!session) {
     return <SetupScreen onDone={({ roomCode, role, pin }) => {
       setSession({ roomCode, role, pin }); setUnlocked(true);
     }} />;
@@ -837,6 +848,8 @@ export default function App() {
             ))}
             <button onClick={() => setManagingCategories(v => !v)}
               style={{ ...pillBtn(managingCategories, C.pink), fontSize:13 }}>⚙️ 分類</button>
+            <button onClick={() => setSortingTasks(v => !v)}
+              style={{ ...pillBtn(sortingTasks, C.mintDark), fontSize:13 }}>↕️ 排序</button>
           </div>
 
           {managingCategories && (
@@ -879,9 +892,45 @@ export default function App() {
             </div>
           )}
 
+          {sortingTasks && filteredTasks.length > 0 && (
+            <div style={{ ...cardStyle, border:`1px solid ${C.mintDark}40`, marginBottom:14, padding:"10px 14px" }}>
+              <div style={{ fontSize:12, color:C.mintDark, fontWeight:600 }}>↕️ 排序模式</div>
+              <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>點 ▲▼ 調整順序，再按「↕️ 排序」關閉即儲存</div>
+            </div>
+          )}
+
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            {filteredTasks.map(task => (
-              editingTaskId === task.id ? (
+            {filteredTasks.map((task, _idx) => {
+              const realIndex = roomData.tasks.indexOf(task);
+              return sortingTasks ? (
+                <div key={task.id} style={{
+                  display:"flex", alignItems:"center", gap:10,
+                  background: C.card, border:`1px solid ${C.mintDark}40`,
+                  borderRadius:14, padding:"12px 14px",
+                  boxShadow:"0 2px 10px rgba(150,140,210,0.08)",
+                }}>
+                  <span style={{ fontSize:18, color:C.textMuted, flexShrink:0 }}>☰</span>
+                  <span style={{ flex:1, fontSize:14, fontWeight:500, color:C.text }}>{task.text}</span>
+                  <span style={{ fontSize:11, color:C.accentDark, background:"#F1ECFB",
+                    padding:"2px 7px", borderRadius:8, fontWeight:700 }}>+{task.points}</span>
+                  <div style={{ display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}>
+                    <button onClick={() => moveTask(realIndex, -1)} disabled={realIndex === 0} style={{
+                      width:28, height:28, borderRadius:8, border:`1px solid ${C.border}`,
+                      background: realIndex === 0 ? C.border : C.card,
+                      color: realIndex === 0 ? C.textMuted : C.accentDark,
+                      cursor: realIndex === 0 ? "default" : "pointer",
+                      fontSize:13, display:"flex", alignItems:"center", justifyContent:"center",
+                    }}>▲</button>
+                    <button onClick={() => moveTask(realIndex, 1)} disabled={realIndex === roomData.tasks.length - 1} style={{
+                      width:28, height:28, borderRadius:8, border:`1px solid ${C.border}`,
+                      background: realIndex === roomData.tasks.length - 1 ? C.border : C.card,
+                      color: realIndex === roomData.tasks.length - 1 ? C.textMuted : C.accentDark,
+                      cursor: realIndex === roomData.tasks.length - 1 ? "default" : "pointer",
+                      fontSize:13, display:"flex", alignItems:"center", justifyContent:"center",
+                    }}>▼</button>
+                  </div>
+                </div>
+              ) : editingTaskId === task.id ? (
                 <div key={task.id} style={{ ...cardStyle, border:`1px solid ${C.accentBorder}` }}>
                   <input value={editTaskText} onChange={e => setEditTaskText(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && saveEditTask()} style={inputStyle} />
@@ -938,8 +987,8 @@ export default function App() {
                     fontSize:14, cursor:"pointer", padding:2, lineHeight:1,
                   }}>🗑️</button>
                 </div>
-              )
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ marginTop:20, ...cardStyle, border:`1px dashed ${C.accentBorder}` }}>
@@ -966,6 +1015,18 @@ export default function App() {
 
         {/* REWARDS */}
         {page === "rewards" && (<>
+          <div style={{ display:"flex", justifyContent:"flex-end", marginBottom:10 }}>
+            <button onClick={() => setSortingRewards(v => !v)}
+              style={{ ...pillBtn(sortingRewards, C.mintDark), fontSize:13 }}>↕️ 排序</button>
+          </div>
+
+          {sortingRewards && roomData.rewards.length > 0 && (
+            <div style={{ ...cardStyle, border:`1px solid ${C.mintDark}40`, marginBottom:14, padding:"10px 14px" }}>
+              <div style={{ fontSize:12, color:C.mintDark, fontWeight:600 }}>↕️ 排序模式</div>
+              <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>點 ▲▼ 調整順序，再按「↕️ 排序」關閉即儲存</div>
+            </div>
+          )}
+
           {roomData.rewards.length === 0 && (
             <div style={{ textAlign:"center", color:C.textMuted, marginTop:40 }}>
               <div style={{ fontSize:36 }}>🎁</div>
@@ -973,8 +1034,40 @@ export default function App() {
             </div>
           )}
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            {roomData.rewards.map(reward => {
+            {roomData.rewards.map((reward, _idx) => {
+              const rewardIndex = roomData.rewards.indexOf(reward);
               const canAfford = roomData.points >= reward.cost;
+              if (sortingRewards) {
+                return (
+                  <div key={reward.id} style={{
+                    display:"flex", alignItems:"center", gap:10,
+                    background: C.card, border:`1px solid ${C.mintDark}40`,
+                    borderRadius:14, padding:"12px 14px",
+                    boxShadow:"0 2px 10px rgba(150,140,210,0.08)",
+                  }}>
+                    <span style={{ fontSize:18, color:C.textMuted, flexShrink:0 }}>☰</span>
+                    <span style={{ flex:1, fontSize:14, fontWeight:500, color:C.text }}>{reward.text}</span>
+                    <span style={{ fontSize:11, color:C.pinkDark, background:"#FFE9EF",
+                      padding:"2px 7px", borderRadius:8, fontWeight:700 }}>{reward.cost} 分</span>
+                    <div style={{ display:"flex", flexDirection:"column", gap:4, flexShrink:0 }}>
+                      <button onClick={() => moveReward(rewardIndex, -1)} disabled={rewardIndex === 0} style={{
+                        width:28, height:28, borderRadius:8, border:`1px solid ${C.border}`,
+                        background: rewardIndex === 0 ? C.border : C.card,
+                        color: rewardIndex === 0 ? C.textMuted : C.pinkDark,
+                        cursor: rewardIndex === 0 ? "default" : "pointer",
+                        fontSize:13, display:"flex", alignItems:"center", justifyContent:"center",
+                      }}>▲</button>
+                      <button onClick={() => moveReward(rewardIndex, 1)} disabled={rewardIndex === roomData.rewards.length - 1} style={{
+                        width:28, height:28, borderRadius:8, border:`1px solid ${C.border}`,
+                        background: rewardIndex === roomData.rewards.length - 1 ? C.border : C.card,
+                        color: rewardIndex === roomData.rewards.length - 1 ? C.textMuted : C.pinkDark,
+                        cursor: rewardIndex === roomData.rewards.length - 1 ? "default" : "pointer",
+                        fontSize:13, display:"flex", alignItems:"center", justifyContent:"center",
+                      }}>▼</button>
+                    </div>
+                  </div>
+                );
+              }
               if (editingRewardId === reward.id) {
                 return (
                   <div key={reward.id} style={{ ...cardStyle, border:`1px solid ${C.pink}` }}>
@@ -1036,6 +1129,7 @@ export default function App() {
               );
             })}
           </div>
+
           <div style={{ marginTop:20, ...cardStyle, border:`1px dashed ${C.pink}` }}>
             <div style={{ fontSize:12, color:C.textMuted, marginBottom:8 }}>新增獎勵（發放者專用）</div>
             <input value={newReward} onChange={e => setNewReward(e.target.value)}
@@ -1083,7 +1177,6 @@ export default function App() {
                     <div key={n.id} style={{
                       ...cardStyle, padding:"10px 14px",
                       display:"flex", justifyContent:"space-between", alignItems:"center",
-                      border:`1px solid ${C.border}`,
                     }}>
                       <span style={{ fontSize:13 }}>{n.msg}</span>
                       <span style={{ fontSize:10, color:C.textMuted, flexShrink:0, marginLeft:8 }}>{fmtTime(n.time)}</span>
@@ -1330,4 +1423,4 @@ export default function App() {
       </div>
     </div>
   );
-      }
+                      }
